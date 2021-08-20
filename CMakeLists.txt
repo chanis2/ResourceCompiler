@@ -18,3 +18,9 @@ add_subdirectory("lib/")
 # ==== SRC ====
 # ==============
 add_subdirectory("src/")
+
+
+# ==============
+# ==== test ====
+# ==============
+add_subdirectory("test/")
