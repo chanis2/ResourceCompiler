@@ -2,10 +2,11 @@
 #include <cstdio>
 #include <malloc.h>
 
-#include <filesystem>
-
 #define SIMPLE_RESOURCE_COMPILER_IMPLEMENTATION
 #include "simple_resource_compiler.h"
+
+#define SRC_RESOURCE_TEST_IMPLEMENTATION
+#include "../bin/test.src.h"
 
 constexpr const char* TEST_SRC = "test.src";
 
@@ -47,7 +48,9 @@ int main(int argc, char** argv) noexcept
 		fseek(src, sub.resourceSize, SEEK_CUR);
 	}
 	free(nameBuf);
-
 	fclose(src);
+
+	printf("\n\n\n=======================================================\n");
+	printf("Test successful.\n\n\n");
 	return 0;
 }

@@ -5,6 +5,17 @@ set(src_SOURCES
 )
 
 add_executable(${PROJECT_NAME} ${src_SOURCES})
+
+add_test(NAME run_src
+	COMMAND src "-t" "../testData" "-o" "test.src"
+	WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+
+add_test(NAME src_check_result
+	COMMAND ${PROJECT_NAME}
+	WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+)
+set_tests_properties(src_check_result PROPERTIES DEPENDS "run_src;")
+
 target_include_directories(${PROJECT_NAME} PUBLIC 
 	${PROJECT_SOURCE_DIR}
 	"${CMAKE_SOURCE_DIR}/src/"

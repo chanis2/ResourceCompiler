@@ -23,4 +23,5 @@ add_subdirectory("src/")
 # ==============
 # ==== test ====
 # ==============
+include(CTest)
 add_subdirectory("test/")
