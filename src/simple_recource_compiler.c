@@ -25,8 +25,11 @@ const char OtherPathDelimiter = '\\';
 #define LOGR_MSG(msg) PrintHelper(msg)
 #define LOGF_MSG(fmt, ...) PrintHelper(fmt, __VA_ARGS__)
 
+static int verbose = 1;
+
 static void PrintHelper(const char* fmt, ...)
 {
+	if(!verbose) return;
 	va_list args;
 	va_start(args, fmt);
 	vprintf(fmt, args);
@@ -38,6 +41,8 @@ static void PrintUsage() {
 	LOGR_MSG("Usage:\tsrc.exe -t \"resources/\" -o \"data.src\"");
 	LOGR_MSG("\t-t : Target directory");
 	LOGR_MSG("\t-o : Output file");
+	LOGR_MSG("\t-s : Source output directory");
+	LOGR_MSG("\t-v : Verbose switch");
 }
 
 typedef struct
@@ -58,11 +63,17 @@ typedef struct
 	// temporary files to assemble header
 	FILE* tmpStringTableFile;
 	FILE* tmpIdTableFile;
+	FILE* tmpOffsetTableFile;
 
 	int packedFileCount;
+	size_t lastResourceOffset;
 } src_context;
 
-char FormatBuffer[1024];
+
+
+static char FormatBuffer[1024];
+
+#include "src_helper_impl.inl"
 
 static int StartPacking(src_context* ctx);
 static int RecurseDirectory(src_context* ctx, const char* path);
@@ -71,6 +82,9 @@ static char* ToUppercase(char* text);
 static char* SanitizeName(char* name);
 
 static void CopyFileToFile(FILE* dst, FILE* src, size_t bytesToCopy);
+
+static void src_write_helper_definitions(src_context* ctx);
+static void src_write_helper_implementations(src_context* ctx);
 
 int main(int argc, char** argv) {
 	if (argc <= 1) {
@@ -96,25 +110,59 @@ int main(int argc, char** argv) {
 			ctx.outputFileName = GetFilename(ctx.outputFilePath, FALSE);
 			ctx.uppercaseFilename = ToUppercase(strdup(ctx.outputFileName));
 
-			ctx.outputHeaderPath = (char*)malloc(headerPathLen);
-			snprintf((char*)ctx.outputHeaderPath, headerPathLen, "%s.h", ctx.outputFilePath);
 			handledArgs += 2;
 		}
 		else if (strcmp(arg, "-t") == 0) {
 			ctx.targetDir = argv[handledArgs + 1];
 			handledArgs += 2;
 		}
+		else if(strcmp(arg, "-s") == 0) {
+			ctx.outputHeaderPath = argv[handledArgs + 1];
+			handledArgs += 2;
+		}
+		else if(strcmp(arg, "-v") == 0) {
+			verbose = 0;
+			handledArgs += 1;
+		}
+		else {
+			LOGF_MSG("Failed to handle \"%s\"", arg);
+			return -1;
+		}
 	}
 	
+	if(!ctx.outputFilePath) {
+		return -1;
+	}
+	if(!ctx.targetDir) {
+		return -1;
+	}
+	if(!ctx.outputHeaderPath) {
+		return -1;
+	}
+	else {
+		size_t bufLen = strlen(ctx.outputHeaderPath) + strlen(ctx.outputFilePath) + 16;
+		char* headerPath = (char*)malloc(bufLen);
+		snprintf(headerPath, bufLen, "%s%c%s.h", ctx.outputHeaderPath, PrefPathDelimiter, ctx.outputFilePath);
+		ctx.outputHeaderPath = headerPath;
+	}
+
+	printf("Running with Output: \"%s\"\n", ctx.outputFilePath);
+	printf("Running with Input: \"%s\"\n", ctx.targetDir);
+	printf("Running with Header: \"%s\"\n", ctx.outputHeaderPath);
+
 	return StartPacking(&ctx);
 }
 
 #define WRITE_STRUCT(buf, file) fwrite(&buf, sizeof(buf), 1, file)
 #define WRITE_DATA(buf, len, file) fwrite(buf, 1, len, file)
 
-#define WRITE_TEXT(text, file) fwrite(text, 1, strlen(text), file)
-
 #define TMP_FORMAT(fmt, ...) format_helper(FormatBuffer, sizeof(FormatBuffer), fmt, __VA_ARGS__)
+
+#define WRITE_TEXT(text, file) fwrite(text, 1, strlen(text), file)
+#define WRITE_TEXTF(file, fmt, ...) {\
+	const char* text = TMP_FORMAT(fmt, __VA_ARGS__);\
+	WRITE_TEXT(text, file);\
+}
 
 static const char* format_helper(char* buf, uint32_t bufSize, const char* fmt, ...)
 {
@@ -125,16 +173,16 @@ static const char* format_helper(char* buf, uint32_t bufSize, const char* fmt, .
 	return buf;
 }
 
-static void src_header_init(SimpleResourceHeader* header)
+static void src_header_init(src_main_header* header)
 {
-	memset(header, 0, sizeof(SimpleResourceHeader));
+	memset(header, 0, sizeof(src_main_header));
 	strcpy(header->header, SRC_RESOURCE_HEADER_VALUE);
 	header->version = SRC_RESOURCE_VERSION;
 }
 
 static void src_write_header(src_context* ctx, size_t resourceCount)
 {
-	SimpleResourceHeader header;
+	src_main_header header;
 	src_header_init(&header);
 	header.subResourceCount = resourceCount;
 	WRITE_STRUCT(header, ctx->outputFile);
@@ -148,33 +196,37 @@ static void src_write_header_start(src_context* ctx)
 	WRITE_TEXT("// =================================================================================\n", ctx->outputHeaderFile);
 	time_t t = time(0);
 	struct tm* tm = localtime(&t);
-	WRITE_TEXT(TMP_FORMAT("//\t\tDate: %02d.%02d.%d\n",
+	
+	WRITE_TEXTF(ctx->outputHeaderFile,
+		"//\t\tDate: %02d.%02d.%d\n",
 		tm->tm_mday,
 		tm->tm_mon + 1,
-		tm->tm_year + 1900), ctx->outputHeaderFile);
-	WRITE_TEXT(TMP_FORMAT("//\t\tTime: %02d:%02d:%02d\n",
+		tm->tm_year + 1900
+	);
+
+	WRITE_TEXTF(ctx->outputHeaderFile,
+		 "//\t\tTime: %02d:%02d:%02d\n",
 		tm->tm_hour,
 		tm->tm_min,
-		tm->tm_sec), ctx->outputHeaderFile);
+		tm->tm_sec);
+
 	WRITE_TEXT("// =================================================================================\n", ctx->outputHeaderFile);
 	WRITE_TEXT("//\t\tInclude like this.\n", ctx->outputHeaderFile);
-	WRITE_TEXT(TMP_FORMAT("//\t\t#define SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
-	WRITE_TEXT(TMP_FORMAT("//\t\t#include \"%s\"\n", ctx->outputHeaderPath), ctx->outputHeaderFile);
+	WRITE_TEXTF(ctx->outputHeaderFile, "//\t\t#define SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename);
+	WRITE_TEXTF(ctx->outputHeaderFile, "//\t\t#include \"%s\"\n", ctx->outputHeaderPath);
 	WRITE_TEXT("// =================================================================================\n\n", ctx->outputHeaderFile);
 	
-	WRITE_TEXT(TMP_FORMAT("#ifndef SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
-	WRITE_TEXT(TMP_FORMAT("#define SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
+	WRITE_TEXTF(ctx->outputHeaderFile, "#ifndef SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename);
+	WRITE_TEXTF(ctx->outputHeaderFile, "#define SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename);
 	WRITE_TEXT("#include \"simple_resource_compiler.h\"\n\n", ctx->outputHeaderFile);
 
 	WRITE_TEXT("#ifdef __cplusplus\n", ctx->outputHeaderFile);
 	WRITE_TEXT("extern \"C\" {\n", ctx->outputHeaderFile);
 	WRITE_TEXT("#endif\n\n", ctx->outputHeaderFile);
 
-	WRITE_TEXT(TMP_FORMAT("#ifdef SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
-
-
-	WRITE_TEXT(TMP_FORMAT("char* %s_ResourceNames[] = {\n", ctx->outputFileName), ctx->tmpStringTableFile);
-	WRITE_TEXT(TMP_FORMAT("enum SRC_RESOURCE_%s_ID : int32_t {\n", ctx->uppercaseFilename), ctx->tmpIdTableFile);
+	WRITE_TEXTF(ctx->tmpStringTableFile, "\nstatic char* %s_RESOURCE_NAMES[] = {\n", ctx->uppercaseFilename);
+	WRITE_TEXTF(ctx->tmpIdTableFile, "\nenum SRC_RESOURCE_%s_ID : int32_t {\n", ctx->uppercaseFilename);
+	WRITE_TEXTF(ctx->tmpOffsetTableFile, "\nstatic size_t %s_RESOURCE_OFFSETS[] = {\n", ctx->uppercaseFilename);
 }
 
 static int src_pack_file(src_context* ctx, cf_file_t* file)
@@ -183,7 +235,7 @@ static int src_pack_file(src_context* ctx, cf_file_t* file)
 	FILE* fileHandle = fopen(file->path, "rb");
 	if (!fileHandle) return 0;
 
-	SimpleResourceSubResourceHeader header = { 0 };
+	src_resource_header header = { 0 };
 	strcpy(header.header, SRC_SUB_RESOURCE_HEADER_VALUE);
 	LOGF_MSG("Hashing: \"%s\"", file->path);
 	header.id = djb2_hash(file->path);
@@ -191,27 +243,36 @@ static int src_pack_file(src_context* ctx, cf_file_t* file)
 	header.resourceSize = file->size;
 	header.nameLen = strlen(file->path) + 1; // add null terminator
 	header.flags = 0;
+	
+	ctx->lastResourceOffset = ftell(ctx->outputFile);
 	WRITE_STRUCT(header, ctx->outputFile);
 	WRITE_DATA(file->path, header.nameLen, ctx->outputFile);
 
-#if 1
-	LOGF_MSG("Copying file!!!!!!!!!!", "");
+	// copy the actual resource file content
 	CopyFileToFile(ctx->outputFile, fileHandle, header.resourceSize);
+
+#if 0
+	SimpleResourceSubResourceHeader foo = {0};
+	size_t currentPos = ftell(ctx->outputFile);
+	fseek(ctx->outputFile, ctx->lastResourceOffset, SEEK_SET);
+	fread(&foo, sizeof(SimpleResourceSubResourceHeader), 1, ctx->outputFile);
+	assert(foo.id == header.id);
+	fseek(ctx->outputFile, currentPos, SEEK_SET);
 #endif
 
 	fclose(fileHandle);
 
-	// write name table
-	WRITE_TEXT(TMP_FORMAT("\t\"%s\",\n", file->path), ctx->tmpStringTableFile);
+	// write tmp tables
+	WRITE_TEXTF(ctx->tmpStringTableFile, "\t\"%s\",\n", file->path);
+	WRITE_TEXTF(ctx->tmpOffsetTableFile, "\t%lld,\n", ctx->lastResourceOffset);
 
 	char* resourceName = SanitizeName(ToUppercase(GetFilename(file->path, TRUE)));
-	WRITE_TEXT(
-		TMP_FORMAT(
-			"\tSRC_%s_%s = %d,\n",
-			ctx->uppercaseFilename,
-			resourceName,
-			ctx->packedFileCount),
-		ctx->tmpIdTableFile);
+	WRITE_TEXTF(ctx->tmpIdTableFile,
+		"\tSRC_%s_%s = %d,\n",
+		ctx->uppercaseFilename,
+		resourceName,
+		ctx->packedFileCount);
+
 	free(resourceName);
 	ctx->packedFileCount += 1;
 	return 1;
@@ -219,39 +280,88 @@ static int src_pack_file(src_context* ctx, cf_file_t* file)
 
 static void src_write_header_end(src_context* ctx)
 {
-	WRITE_TEXT("};\n", ctx->tmpStringTableFile);
-	WRITE_TEXT("};\n", ctx->tmpIdTableFile);
+	WRITE_TEXT("};\n\n", ctx->tmpStringTableFile);
+	WRITE_TEXT("};\n\n", ctx->tmpOffsetTableFile);
+	
+	WRITE_TEXTF(ctx->tmpIdTableFile,
+		"\tSRC_%s_COUNT = %d,\n",
+		ctx->uppercaseFilename,
+		ctx->packedFileCount);
+	WRITE_TEXT("};\n\n", ctx->tmpIdTableFile);
 
-	fseek(ctx->tmpStringTableFile, 0, SEEK_END);
-	size_t tmpFileSize = ftell(ctx->tmpStringTableFile);
-	rewind(ctx->tmpStringTableFile);
-	CopyFileToFile(ctx->outputHeaderFile, ctx->tmpStringTableFile, tmpFileSize);
+	//////////////////////////////////////
+	src_write_helper_definitions(ctx);
 
 	fseek(ctx->tmpIdTableFile, 0, SEEK_END);
-	tmpFileSize = ftell(ctx->tmpIdTableFile);
+	size_t tmpFileSize = ftell(ctx->tmpIdTableFile);
 	rewind(ctx->tmpIdTableFile);
 	CopyFileToFile(ctx->outputHeaderFile, ctx->tmpIdTableFile, tmpFileSize);
 
-	WRITE_TEXT(TMP_FORMAT("\n#endif // SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
+	WRITE_TEXTF(ctx->outputHeaderFile, "#ifdef SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename);
+
+	fseek(ctx->tmpStringTableFile, 0, SEEK_END);
+	tmpFileSize = ftell(ctx->tmpStringTableFile);
+	rewind(ctx->tmpStringTableFile);
+	CopyFileToFile(ctx->outputHeaderFile, ctx->tmpStringTableFile, tmpFileSize);
+
+	fseek(ctx->tmpOffsetTableFile, 0, SEEK_END);
+	tmpFileSize = ftell(ctx->tmpOffsetTableFile);
+	rewind(ctx->tmpOffsetTableFile);
+	CopyFileToFile(ctx->outputHeaderFile, ctx->tmpOffsetTableFile, tmpFileSize);
+
+	src_write_helper_implementations(ctx);
+	WRITE_TEXTF(ctx->outputHeaderFile, "\n#endif // SRC_RESOURCE_%s_IMPLEMENTATION\n", ctx->uppercaseFilename);
 
 	WRITE_TEXT("#ifdef __cplusplus\n", ctx->outputHeaderFile);
 	WRITE_TEXT("} // extern \"C\"\n", ctx->outputHeaderFile);
 	WRITE_TEXT("#endif\n", ctx->outputHeaderFile);
 
-	WRITE_TEXT(TMP_FORMAT("#endif // SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename), ctx->outputHeaderFile);
+	WRITE_TEXTF(ctx->outputHeaderFile, "#endif // SRC_RESOURCE_%s_HEADER\n", ctx->uppercaseFilename);
+}
+
+static void src_write_helper_definitions(src_context* ctx)
+{
+	WRITE_TEXTF(ctx->outputHeaderFile, src_helper_definitions,
+	 	ctx->outputFileName,
+	  	ctx->outputFileName
+	);
+}
+
+static void src_write_helper_implementations(src_context* ctx)
+{
+	WRITE_TEXTF(ctx->outputHeaderFile, src_helper_impl, 
+		ctx->outputFileName,
+		ctx->uppercaseFilename,
+		ctx->outputFileName,
+		ctx->uppercaseFilename
+	);
 }
 
 static int StartPacking(src_context* ctx)
 {
-	if (ctx->outputFile = fopen(ctx->outputFilePath, "wb")) {
-		ctx->outputHeaderFile = fopen(ctx->outputHeaderPath, "w");
+	if (ctx->outputFile = fopen(ctx->outputFilePath, "wb+")) {
+		ctx->outputHeaderFile = fopen(ctx->outputHeaderPath, "w+");
 		ctx->tmpStringTableFile = fopen("stringTable.tmp", "w+");
 		ctx->tmpIdTableFile = fopen("idTable.tmp", "w+");
+		ctx->tmpOffsetTableFile = fopen("offsetTable.tmp", "w+");
 
-		if (!ctx->outputHeaderFile || !ctx->tmpStringTableFile) {
-			if(ctx->outputFile) fclose(ctx->outputFile);
-			if(ctx->tmpStringTableFile) fclose(ctx->tmpStringTableFile);
-			if(ctx->tmpIdTableFile) fclose(ctx->tmpIdTableFile);
+		if (!ctx->outputHeaderFile 
+		|| !ctx->tmpStringTableFile
+		|| !ctx->tmpIdTableFile
+		|| !ctx->tmpOffsetTableFile) {
+			if(ctx->outputFile) {
+				fclose(ctx->outputFile);
+			} 
+			if(ctx->tmpStringTableFile) {
+				fclose(ctx->tmpStringTableFile);
+			} 
+			if(ctx->tmpIdTableFile) {
+				fclose(ctx->tmpIdTableFile);
+			} 
+			if(ctx->tmpOffsetTableFile) {
+				fclose(ctx->tmpIdTableFile);
+			}
+			//assert(0);
 			LOGF_MSG("Failed to open header file.");
 			return -1;
 		}
@@ -276,6 +386,7 @@ static int StartPacking(src_context* ctx)
 		fclose(ctx->outputFile); ctx->outputFile = NULL;
 		fclose(ctx->tmpStringTableFile); ctx->tmpStringTableFile = NULL;
 		fclose(ctx->tmpIdTableFile); ctx->tmpIdTableFile = NULL;
+		fclose(ctx->tmpOffsetTableFile); ctx->tmpOffsetTableFile = NULL;
 
 		LOGF_MSG("Packaged %d files", ctx->packedFileCount);
 		return succ;

@@ -14,9 +14,9 @@ typedef struct {
 	size_t subResourceCount;
 	// after the header follows
 	/* first subresouce */
-} SimpleResourceHeader;
+} src_main_header;
 
-int src_validate_header(SimpleResourceHeader* h);
+int src_validate_header(src_main_header* h);
 
 #define SRC_SUB_RESOURCE_HEADER_VALUE "SUBDATA"
 
@@ -29,9 +29,9 @@ typedef struct {
 	// after the header follows
 	/* name */
 	/* resourceData */
-} SimpleResourceSubResourceHeader;
+} src_resource_header;
 
-int src_validate_sub_header(SimpleResourceSubResourceHeader* h);
+int src_validate_sub_header(src_resource_header* h);
 
 // djb2 http://www.cse.yorku.ca/~oz/hash.html
 // this algorithm(k = 33) was first reported by dan bernstein many years ago in comp.lang.c.
@@ -43,13 +43,13 @@ uint32_t djb2_hash(unsigned char* str);
 
 #include <string.h>
 
-int src_validate_header(SimpleResourceHeader* h)
+int src_validate_header(src_main_header* h)
 {
 	return h->version == SRC_RESOURCE_VERSION 
 		&& strcmp(h->header, SRC_RESOURCE_HEADER_VALUE) == 0;
 }
 
-inline int src_validate_sub_header(SimpleResourceSubResourceHeader* h)
+inline int src_validate_sub_header(src_resource_header* h)
 {
 	return strcmp(h->header, SRC_SUB_RESOURCE_HEADER_VALUE) == 0;
 }
@@ -66,9 +66,9 @@ uint32_t djb2_hash(unsigned char* str)
 	return hash;
 }
 
-#endif//SIMPLE_RESOURCE_COMPILER_IMPLEMENTATION
+#endif //SIMPLE_RESOURCE_COMPILER_IMPLEMENTATION
 
 #ifdef __cplusplus
 }
 #endif
-#endif//SIMPLE_RESOURCE_COMPILER
+#endif //SIMPLE_RESOURCE_COMPILER

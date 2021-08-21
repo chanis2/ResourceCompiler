@@ -5,7 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) Launch",
+            "name": "Debug src_test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/src_test.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/bin",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "Debug src",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/src.exe",
@@ -13,12 +25,15 @@
                 "-t",
                 "../testData",
                 "-o",
-                "test.src"
+                "test.src",
+                "-s",
+                "."
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/bin",
             "environment": [],
-            "console": "externalTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         }
     ]
 }
