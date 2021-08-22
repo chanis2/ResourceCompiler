@@ -1,5 +1,7 @@
 project(src_test CXX)
 
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/;${CMAKE_MODULE_PATH}")
+
 set(src_SOURCES
   "test.cpp"
 )
@@ -19,23 +21,17 @@ add_test(NAME src_check_result
 	COMMAND ${PROJECT_NAME}
 	WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
-set_tests_properties(src_check_result PROPERTIES DEPENDS "run_src;run_src2;")
-
+#set_tests_properties(src_check_result PROPERTIES DEPENDS "run_src;run_src2;")
 
 include(SimpleResourceCompiler)
 src_compile_resources(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/testData/" "test.src")
 src_compile_resources(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/testData/font/" "foo.src")
-#src_compile_resources(${PROJECT_NAME} "${CMAKE_SOURCE_DIR}/testData/pic/" "pic.data")
 
 target_include_directories(${PROJECT_NAME} PUBLIC 
-	${PROJECT_SOURCE_DIR}
-	"${CMAKE_SOURCE_DIR}/src/"
 	${CMAKE_BINARY_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PUBLIC 
-	stb
-)
+target_link_libraries(${PROJECT_NAME} PUBLIC SimpleResourceCompilerHeader)
 
 if(WIN32)
 	set_property(TARGET ${PROJECT_NAME} PROPERTY 

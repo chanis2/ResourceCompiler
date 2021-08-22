@@ -12,7 +12,7 @@ function(SRC_COMPILE_RESOURCES target directory name)
     message("${SRC_FILE_RESOURCES}")
 
     add_custom_command(
-                    OUTPUT "${CMAKE_BINARY_DIR}/${SRC_GENERATED_HEADER}"
+                    OUTPUT "${CMAKE_BINARY_DIR}/${SRC_GENERATED_HEADER}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${name}"
                     COMMAND $<TARGET_FILE:src> ARGS "-v" "-t" ${directory} "-o" ${name} "-s" "${CMAKE_BINARY_DIR}/"
                     WORKING_DIRECTORY $<TARGET_FILE_DIR:src>
                     DEPENDS ${SRC_FILE_RESOURCES}
