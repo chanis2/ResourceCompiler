@@ -10,6 +10,10 @@
 #define SIMPLE_RESOURCE_COMPILER_IMPLEMENTATION
 #include "simple_resource_compiler.h"
 
+#define SRC_ID_TABLE_FILE "idTable.tmp"
+#define SRC_STRING_TABLE_FILE "stringTable.tmp"
+#define SRC_OFFSET_TABLE_FILE "offsetTable.tmp"
+
 #ifdef WIN32
 const char PrefPathDelimiter = '\\';
 const char OtherPathDelimiter = '/';
@@ -341,9 +345,9 @@ static int StartPacking(src_context* ctx)
 {
 	if (ctx->outputFile = fopen(ctx->outputFilePath, "wb+")) {
 		ctx->outputHeaderFile = fopen(ctx->outputHeaderPath, "w+");
-		ctx->tmpStringTableFile = fopen("stringTable.tmp", "w+");
-		ctx->tmpIdTableFile = fopen("idTable.tmp", "w+");
-		ctx->tmpOffsetTableFile = fopen("offsetTable.tmp", "w+");
+		ctx->tmpStringTableFile = fopen(SRC_STRING_TABLE_FILE, "w+");
+		ctx->tmpIdTableFile = fopen(SRC_ID_TABLE_FILE, "w+");
+		ctx->tmpOffsetTableFile = fopen(SRC_OFFSET_TABLE_FILE, "w+");
 
 		if (!ctx->outputHeaderFile 
 		|| !ctx->tmpStringTableFile
@@ -388,6 +392,10 @@ static int StartPacking(src_context* ctx)
 		fclose(ctx->tmpIdTableFile); ctx->tmpIdTableFile = NULL;
 		fclose(ctx->tmpOffsetTableFile); ctx->tmpOffsetTableFile = NULL;
 
+		remove(SRC_STRING_TABLE_FILE);
+		remove(SRC_ID_TABLE_FILE);
+		remove(SRC_OFFSET_TABLE_FILE);
+		
 		LOGF_MSG("Packaged %d files", ctx->packedFileCount);
 		return succ;
 	}
